@@ -39,6 +39,7 @@ class Transaction(object):
     '''
 
     _local = _Local()
+    _sub_transactions = []
 
     cache_keys = {'language', 'fuzzy_translation', '_datetime',
         '_datetime_exclude'}
@@ -132,6 +133,7 @@ class Transaction(object):
                     self._datamanagers = []
         finally:
             current_instance = transactions.pop()
+            self._sub_transactions = []
         assert current_instance is self, transactions
 
     def set_context(self, context=None, **kwargs):
@@ -182,6 +184,11 @@ class Transaction(object):
                     datamanager.commit(self)
                 for datamanager in self._datamanagers:
                     datamanager.tpc_vote(self)
+            # ABD: Some datamanager may returns transactions which should
+            # be committed just before the main transaction
+            for sub_transaction in self._sub_transactions:
+                sub_transaction.commit()
+            self._sub_transactions = []
             self.connection.commit()
         except:
             self.rollback()
@@ -196,6 +203,8 @@ class Transaction(object):
                     exc_info=True)
 
     def rollback(self):
+        for sub_transaction in self._sub_transactions:
+            sub_transaction.rollback()
         for cache in self.cache.itervalues():
             cache.clear()
         for datamanager in self._datamanagers:
