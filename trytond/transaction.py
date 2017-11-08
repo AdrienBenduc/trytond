@@ -39,7 +39,6 @@ class Transaction(object):
     '''
 
     _local = _Local()
-    _sub_transactions = []
 
     cache_keys = {'language', 'fuzzy_translation', '_datetime',
         '_datetime_exclude'}
@@ -101,6 +100,7 @@ class Transaction(object):
         self.timestamp = {}
         self.counter = 0
         self._datamanagers = []
+        self._sub_transactions = []
         return self
 
     def __enter__(self):
@@ -133,7 +133,6 @@ class Transaction(object):
                     self._datamanagers = []
         finally:
             current_instance = transactions.pop()
-            self._sub_transactions = []
         assert current_instance is self, transactions
 
     def set_context(self, context=None, **kwargs):
@@ -175,6 +174,9 @@ class Transaction(object):
             context=self.context, close=self.close, readonly=readonly,
             autocommit=autocommit)
 
+    def add_sub_transactions(self, sub_transactions):
+        self._sub_transactions.extend(sub_transactions)
+
     def commit(self):
         try:
             if self._datamanagers:
@@ -187,8 +189,10 @@ class Transaction(object):
             # ABD: Some datamanager may returns transactions which should
             # be committed just before the main transaction
             for sub_transaction in self._sub_transactions:
-                sub_transaction.commit()
-            self._sub_transactions = []
+                # Do not handle TPC or recursive transaction commit
+                # This just commit the sub transactions to avoid any crashes
+                # which could occurs otherwise.
+                sub_transaction.connection.commit()
             self.connection.commit()
         except:
             self.rollback()
